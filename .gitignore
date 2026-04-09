@@ -1,0 +1,9 @@
+weights/*.pt
+weights/*.pth
+data/raw/
+data/processed/
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.worktrees/
