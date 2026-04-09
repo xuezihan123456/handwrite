@@ -1,0 +1,20 @@
+Metadata-Version: 2.4
+Name: handwrite
+Version: 0.1.0
+Summary: AI Chinese handwriting generator
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: torch>=2.0
+Requires-Dist: torchvision>=0.15
+Requires-Dist: Pillow>=10.0
+Requires-Dist: numpy>=1.24
+Requires-Dist: opencv-python>=4.8
+Requires-Dist: gradio>=4.0
+Requires-Dist: tqdm>=4.65
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: matplotlib>=3.7; extra == "dev"
+
+# HandWrite
+
+Docs-first scaffold for an AI Chinese handwriting generator.

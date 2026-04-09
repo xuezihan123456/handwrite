@@ -1,0 +1,11 @@
+torch>=2.0
+torchvision>=0.15
+Pillow>=10.0
+numpy>=1.24
+opencv-python>=4.8
+gradio>=4.0
+tqdm>=4.65
+
+[dev]
+pytest>=7.0
+matplotlib>=3.7
