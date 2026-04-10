@@ -68,6 +68,16 @@ def export(page: Image.Image, output_path, format: str = "png", **kwargs):
     raise ValueError("format must be 'png' or 'pdf'")
 
 
+def export_pages(pages, output_path, format: str = "png", **kwargs):
+    """Export generated pages as PNG files or a multi-page PDF."""
+    normalized_format = format.lower()
+    if normalized_format == "png":
+        return _exporter.export_pages_png(pages, output_path, **kwargs)
+    if normalized_format == "pdf":
+        return _exporter.export_pages_pdf(pages, output_path, **kwargs)
+    raise ValueError("format must be 'png' or 'pdf'")
+
+
 def generate_pages(text: str, **kwargs) -> list[Image.Image]:
     """Generate one or more handwriting page images for longer text."""
     font_size = int(kwargs.get("font_size", 80))

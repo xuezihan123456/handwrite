@@ -26,7 +26,9 @@ def test_generate_handwriting_defaults_follow_public_api(monkeypatch) -> None:
         patch.setattr(handwrite, "generate", fake_generate)
         reloaded_demo_app = importlib.reload(demo_app)
 
-        demo_defaults = inspect.signature(reloaded_demo_app.generate_handwriting).parameters
+        demo_defaults = inspect.signature(
+            reloaded_demo_app.generate_handwriting
+        ).parameters
         public_defaults = inspect.signature(fake_generate).parameters
 
         for name in ("style", "paper", "layout", "font_size"):
@@ -35,41 +37,68 @@ def test_generate_handwriting_defaults_follow_public_api(monkeypatch) -> None:
     importlib.reload(demo_app)
 
 
-def test_generate_demo_artifacts_returns_preview_and_export_paths(
+def test_generate_demo_document_artifacts_returns_preview_and_multi_page_exports(
     monkeypatch, tmp_path
 ) -> None:
-    preview = object()
-    exported: list[tuple[object, Path, str]] = []
+    first_page = object()
+    second_page = object()
+    generate_pages_calls: list[dict[str, object]] = []
 
-    monkeypatch.setattr(demo_app, "generate_handwriting", lambda *args, **kwargs: preview)
+    def fake_generate_pages(text: str, **kwargs):
+        generate_pages_calls.append({"text": text, **kwargs})
+        return [first_page, second_page]
 
-    def fake_export(page, output_path, format="png", **kwargs):
+    def fake_export_pages_png(pages, output_dir, prefix="page", dpi=300):
+        directory = Path(output_dir)
+        directory.mkdir(parents=True, exist_ok=True)
+        written_paths = []
+        for index, _ in enumerate(pages, start=1):
+            path = directory / f"{prefix}_{index:03d}.png"
+            path.write_text(f"png-{index}", encoding="utf-8")
+            written_paths.append(path)
+        return written_paths
+
+    def fake_export_pages_pdf(pages, output_path, dpi=300):
         path = Path(output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(format, encoding="utf-8")
-        exported.append((page, path, format))
+        path.write_bytes(b"%PDF-demo")
         return path
 
-    monkeypatch.setattr(handwrite, "export", fake_export)
+    monkeypatch.setattr(handwrite, "generate_pages", fake_generate_pages)
+    monkeypatch.setattr(demo_app, "export_pages_png", fake_export_pages_png)
+    monkeypatch.setattr(demo_app, "export_pages_pdf", fake_export_pages_pdf)
 
-    actual_preview, png_path, pdf_path = demo_app.generate_demo_artifacts(
-        "sample text",
+    actual_preview, png_paths, pdf_path = demo_app.generate_demo_document_artifacts(
+        "long sample text",
+        style="demo-style",
+        paper="demo-paper",
+        layout="demo-layout",
+        font_size=96,
+        preview_page_index=1,
         output_dir=tmp_path / "artifacts",
     )
 
-    assert actual_preview is preview
-    assert Path(png_path).suffix == ".png"
-    assert Path(pdf_path).suffix == ".pdf"
-    assert Path(png_path).exists()
+    assert actual_preview is second_page
+    assert png_paths == [
+        str(tmp_path / "artifacts" / "handwriting_001.png"),
+        str(tmp_path / "artifacts" / "handwriting_002.png"),
+    ]
+    assert Path(pdf_path) == tmp_path / "artifacts" / "handwriting.pdf"
     assert Path(pdf_path).exists()
-    assert exported == [
-        (preview, Path(png_path), "png"),
-        (preview, Path(pdf_path), "pdf"),
+    assert generate_pages_calls == [
+        {
+            "text": "long sample text",
+            "style": "demo-style",
+            "paper": "demo-paper",
+            "layout": "demo-layout",
+            "font_size": 96,
+        }
     ]
 
 
-def test_generate_demo_artifacts_prunes_old_temp_dirs(monkeypatch, tmp_path) -> None:
-    preview = object()
+def test_generate_demo_document_artifacts_prunes_old_temp_dirs(
+    monkeypatch, tmp_path
+) -> None:
     stale_dir = tmp_path / "stale"
     fresh_dirs = [tmp_path / f"keep_{index:02d}" for index in range(20)]
     stale_dir.mkdir()
@@ -77,33 +106,79 @@ def test_generate_demo_artifacts_prunes_old_temp_dirs(monkeypatch, tmp_path) -> 
         directory.mkdir()
 
     monkeypatch.setattr(demo_app, "_DEMO_OUTPUT_ROOT", tmp_path, raising=False)
-    monkeypatch.setattr(demo_app, "generate_handwriting", lambda *args, **kwargs: preview)
+    monkeypatch.setattr(handwrite, "generate_pages", lambda *args, **kwargs: [object()])
+    monkeypatch.setattr(
+        demo_app,
+        "export_pages_png",
+        lambda pages, output_dir, prefix="page", dpi=300: [
+            Path(output_dir) / f"{prefix}_001.png"
+        ],
+    )
+    monkeypatch.setattr(
+        demo_app,
+        "export_pages_pdf",
+        lambda pages, output_path, dpi=300: Path(output_path),
+    )
 
-    def fake_export(page, output_path, format="png", **kwargs):
-        path = Path(output_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(format, encoding="utf-8")
-        return path
+    _, png_paths, pdf_path = demo_app.generate_demo_document_artifacts("sample text")
 
-    monkeypatch.setattr(handwrite, "export", fake_export)
-
-    _, png_path, pdf_path = demo_app.generate_demo_artifacts("sample text")
-
-    assert png_path is not None and pdf_path is not None
+    assert png_paths is not None and pdf_path is not None
     assert stale_dir.exists() is False
 
 
-def test_generate_demo_artifacts_returns_empty_outputs_for_blank_input(
+def test_generate_demo_document_artifacts_returns_empty_outputs_for_blank_input(
     tmp_path,
 ) -> None:
     output_dir = tmp_path / "artifacts"
 
-    assert demo_app.generate_demo_artifacts("   ", output_dir=output_dir) == (
+    assert demo_app.generate_demo_document_artifacts("   ", output_dir=output_dir) == (
         None,
         None,
         None,
     )
     assert not output_dir.exists()
+
+
+def test_generate_demo_document_artifacts_uses_generate_pages_not_single_page_path(
+    monkeypatch, tmp_path
+) -> None:
+    preview_page = object()
+    generate_pages_calls: list[str] = []
+
+    def fake_generate_pages(text: str, **kwargs):
+        generate_pages_calls.append(text)
+        return [preview_page]
+
+    monkeypatch.setattr(handwrite, "generate_pages", fake_generate_pages)
+    monkeypatch.setattr(
+        demo_app,
+        "generate_handwriting",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("single-page helper should not be used")
+        ),
+    )
+    monkeypatch.setattr(
+        demo_app,
+        "export_pages_png",
+        lambda pages, output_dir, prefix="page", dpi=300: [
+            Path(output_dir) / f"{prefix}_001.png"
+        ],
+    )
+    monkeypatch.setattr(
+        demo_app,
+        "export_pages_pdf",
+        lambda pages, output_path, dpi=300: Path(output_path),
+    )
+
+    preview, png_paths, pdf_path = demo_app.generate_demo_document_artifacts(
+        "demo text",
+        output_dir=tmp_path / "artifacts",
+    )
+
+    assert preview is preview_page
+    assert png_paths == [str(tmp_path / "artifacts" / "handwriting_001.png")]
+    assert pdf_path == str(tmp_path / "artifacts" / "handwriting.pdf")
+    assert generate_pages_calls == ["demo text"]
 
 
 def test_main_launches_built_demo(monkeypatch) -> None:
@@ -120,7 +195,7 @@ def test_main_launches_built_demo(monkeypatch) -> None:
     assert launched["kwargs"] == {"server_name": "0.0.0.0", "server_port": 7860}
 
 
-def test_build_demo_returns_blocks_and_wires_file_outputs(monkeypatch) -> None:
+def test_build_demo_returns_blocks_and_wires_multi_page_outputs(monkeypatch) -> None:
     active_blocks: list["FakeBlocks"] = []
 
     class FakeComponent:
@@ -222,19 +297,29 @@ def test_build_demo_returns_blocks_and_wires_file_outputs(monkeypatch) -> None:
             for component in demo.components
             if isinstance(component, FakeDropdown)
         }
+        file_outputs = [
+            component for component in click_event["outputs"] if isinstance(component, FakeFile)
+        ]
+        png_output = next(
+            component for component in file_outputs if component.label == "PNG Pages"
+        )
 
         assert isinstance(demo, FakeBlocks)
-        assert dropdown_by_label["纸张类型"].value == "essay-paper"
-        assert "essay-paper" in dropdown_by_label["纸张类型"].choices
-        assert dropdown_by_label["排版风格"].value == "free-layout"
-        assert "free-layout" in dropdown_by_label["排版风格"].choices
-        assert click_event["fn"] is reloaded_demo_app.generate_demo_artifacts
+        assert dropdown_by_label["Paper Type"].value == "essay-paper"
+        assert "essay-paper" in dropdown_by_label["Paper Type"].choices
+        assert dropdown_by_label["Layout Style"].value == "free-layout"
+        assert "free-layout" in dropdown_by_label["Layout Style"].choices
+        assert click_event["fn"] is reloaded_demo_app.generate_demo_document_artifacts
         assert any(
             isinstance(component, FakeImage) for component in click_event["outputs"]
         )
-        assert sum(
-            isinstance(component, FakeFile) for component in click_event["outputs"]
-        ) == 2
+        assert len(file_outputs) == 2
+        assert png_output.kwargs["file_count"] == "multiple"
+        assert any(
+            isinstance(component, FakeButton)
+            and "multi-page" in component.value.lower()
+            for component in demo.components
+        )
         assert demo.kwargs.get("css")
 
     importlib.reload(demo_app)

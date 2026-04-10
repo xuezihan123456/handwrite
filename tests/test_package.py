@@ -1,4 +1,5 @@
 from PIL import Image
+import pytest
 
 import handwrite
 import handwrite.exporter as exporter_module
@@ -80,3 +81,81 @@ def test_export_dispatches_pdf_to_exporter(monkeypatch, tmp_path) -> None:
         "destination": output_path,
         "dpi": 144,
     }
+
+
+def test_export_pages_dispatches_pdf_to_exporter(monkeypatch, tmp_path) -> None:
+    pages = [
+        Image.new("L", (2480, 3508), color=255),
+        Image.new("L", (2480, 3508), color=240),
+    ]
+    output_path = tmp_path / "pages.pdf"
+    captured: dict[str, object] = {}
+
+    def fake_export_pages_pdf(images, destination, dpi=300):
+        captured["images"] = images
+        captured["destination"] = destination
+        captured["dpi"] = dpi
+        return output_path
+
+    monkeypatch.setattr(
+        exporter_module,
+        "export_pages_pdf",
+        fake_export_pages_pdf,
+        raising=False,
+    )
+
+    written_path = handwrite.export_pages(pages, output_path, format="pdf", dpi=144)
+
+    assert written_path == output_path
+    assert captured == {
+        "images": pages,
+        "destination": output_path,
+        "dpi": 144,
+    }
+
+
+def test_export_pages_dispatches_png_to_exporter(monkeypatch, tmp_path) -> None:
+    pages = [
+        Image.new("L", (2480, 3508), color=255),
+        Image.new("L", (2480, 3508), color=240),
+    ]
+    output_dir = tmp_path / "pages"
+    written_paths = [output_dir / "page_001.png", output_dir / "page_002.png"]
+    captured: dict[str, object] = {}
+
+    def fake_export_pages_png(images, destination, prefix="page", dpi=300):
+        captured["images"] = images
+        captured["destination"] = destination
+        captured["prefix"] = prefix
+        captured["dpi"] = dpi
+        return written_paths
+
+    monkeypatch.setattr(
+        exporter_module,
+        "export_pages_png",
+        fake_export_pages_png,
+        raising=False,
+    )
+
+    result = handwrite.export_pages(
+        pages,
+        output_dir,
+        format="png",
+        prefix="sheet",
+        dpi=200,
+    )
+
+    assert result == written_paths
+    assert captured == {
+        "images": pages,
+        "destination": output_dir,
+        "prefix": "sheet",
+        "dpi": 200,
+    }
+
+
+def test_export_pages_rejects_invalid_format(tmp_path) -> None:
+    pages = [Image.new("L", (2480, 3508), color=255)]
+
+    with pytest.raises(ValueError, match="format must be 'png' or 'pdf'"):
+        handwrite.export_pages(pages, tmp_path / "pages", format="jpg")

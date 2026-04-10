@@ -8,13 +8,14 @@ from typing import Optional, Union
 from uuid import uuid4
 
 import handwrite
+from handwrite.exporter import export_pages_pdf, export_pages_png
 
 
 PathLike = Union[str, Path]
 _PAPER_CHOICES = ["白纸", "横线纸", "方格纸", "米字格"]
 _LAYOUT_CHOICES = ["工整", "自然", "潦草"]
 _DEMO_OUTPUT_ROOT = Path(gettempdir()) / "handwrite-demo"
-_PNG_FILENAME = "handwriting.png"
+_PNG_PREFIX = "handwriting"
 _PDF_FILENAME = "handwriting.pdf"
 _MAX_DEMO_EXPORT_DIRS = 20
 _CUSTOM_CSS = """
@@ -94,6 +95,13 @@ def _prune_demo_output_dirs(max_keep: int = _MAX_DEMO_EXPORT_DIRS) -> None:
         shutil.rmtree(stale_dir, ignore_errors=True)
 
 
+def _resolve_preview_page_index(preview_page_index: int, page_count: int) -> int:
+    if page_count < 1:
+        raise ValueError("page_count must be positive")
+    normalized_index = int(preview_page_index)
+    return max(0, min(normalized_index, page_count - 1))
+
+
 def generate_handwriting(
     text: str,
     style: str = _DEFAULTS["style"],
@@ -114,6 +122,42 @@ def generate_handwriting(
     )
 
 
+def generate_demo_document_artifacts(
+    text: str,
+    style: str = _DEFAULTS["style"],
+    paper: str = _DEFAULTS["paper"],
+    layout: str = _DEFAULTS["layout"],
+    font_size: int = _DEFAULTS["font_size"],
+    preview_page_index: int = 0,
+    output_dir: Optional[PathLike] = None,
+):
+    """Generate preview and multi-page exports for the demo."""
+    if not text.strip():
+        return None, None, None
+
+    pages = handwrite.generate_pages(
+        text=text,
+        style=style,
+        paper=paper,
+        layout=layout,
+        font_size=int(font_size),
+    )
+    if not pages:
+        return None, None, None
+
+    preview = pages[_resolve_preview_page_index(preview_page_index, len(pages))]
+    artifact_dir = _resolve_output_dir(output_dir)
+    try:
+        png_paths = export_pages_png(pages, artifact_dir, prefix=_PNG_PREFIX)
+        pdf_path = export_pages_pdf(pages, artifact_dir / _PDF_FILENAME)
+    except Exception:
+        if output_dir is None:
+            shutil.rmtree(artifact_dir, ignore_errors=True)
+        raise
+
+    return preview, [str(path) for path in png_paths], str(pdf_path)
+
+
 def generate_demo_artifacts(
     text: str,
     style: str = _DEFAULTS["style"],
@@ -122,26 +166,15 @@ def generate_demo_artifacts(
     font_size: int = _DEFAULTS["font_size"],
     output_dir: Optional[PathLike] = None,
 ):
-    """Generate preview and downloadable export artifacts for the demo."""
-    preview = generate_handwriting(
+    """Backward-compatible alias for demo artifact generation."""
+    return generate_demo_document_artifacts(
         text=text,
         style=style,
         paper=paper,
         layout=layout,
         font_size=font_size,
+        output_dir=output_dir,
     )
-    if preview is None:
-        return None, None, None
-
-    artifact_dir = _resolve_output_dir(output_dir)
-    try:
-        png_path = handwrite.export(preview, artifact_dir / _PNG_FILENAME, format="png")
-        pdf_path = handwrite.export(preview, artifact_dir / _PDF_FILENAME, format="pdf")
-    except Exception:
-        if output_dir is None:
-            shutil.rmtree(artifact_dir, ignore_errors=True)
-        raise
-    return preview, str(png_path), str(pdf_path)
 
 
 def export_handwriting(
@@ -175,8 +208,9 @@ def build_demo():
         gr.Markdown(
             value=(
                 "<div class='demo-hero'>"
-                "<h1>HandWrite 中文手写页生成器</h1>"
-                "<p>输入文字后即可预览结果，并直接下载 PNG 或 PDF 文件。</p>"
+                "<h1>HandWrite Chinese Handwriting Demo</h1>"
+                "<p>Paste a short note or a long passage. The preview shows one page, "
+                "while downloads include the full multi-page PNG set and PDF document.</p>"
                 "</div>"
             )
         )
@@ -184,47 +218,61 @@ def build_demo():
         with gr.Row(elem_id="demo-shell"):
             with gr.Column(scale=4, elem_classes=["demo-panel"]):
                 gr.Markdown(
-                    value="### 生成设置\n<p class='demo-hint'>调整纸张、布局和字号后生成下载文件。</p>"
+                    value=(
+                        "### Generation Settings\n"
+                        "<p class='demo-hint'>Long text is split automatically across "
+                        "multiple pages for download.</p>"
+                    )
                 )
                 text_input = gr.Textbox(
-                    label="输入文字",
-                    lines=8,
-                    placeholder="在这里输入要转换的中文内容……",
+                    label="Text",
+                    lines=10,
+                    placeholder=(
+                        "Paste Chinese text here. Long passages will be exported as "
+                        "multi-page PNG and PDF files."
+                    ),
                 )
                 style_input = gr.Dropdown(
                     choices=_with_default_choice(_DEFAULTS["style"], handwrite.list_styles()),
                     value=_DEFAULTS["style"],
-                    label="手写风格",
+                    label="Handwriting Style",
                 )
                 paper_input = gr.Dropdown(
                     choices=_with_default_choice(_DEFAULTS["paper"], _PAPER_CHOICES),
                     value=_DEFAULTS["paper"],
-                    label="纸张类型",
+                    label="Paper Type",
                 )
                 layout_input = gr.Dropdown(
                     choices=_with_default_choice(_DEFAULTS["layout"], _LAYOUT_CHOICES),
                     value=_DEFAULTS["layout"],
-                    label="排版风格",
+                    label="Layout Style",
                 )
                 font_size_input = gr.Slider(
                     minimum=40,
                     maximum=120,
                     value=_DEFAULTS["font_size"],
                     step=10,
-                    label="字号",
+                    label="Font Size",
                 )
-                generate_button = gr.Button(value="生成预览并导出", variant="primary")
+                generate_button = gr.Button(
+                    value="Generate Preview + Multi-Page Files",
+                    variant="primary",
+                )
 
             with gr.Column(scale=5, elem_classes=["demo-panel"]):
                 gr.Markdown(
-                    value="### 结果输出\n<p class='demo-hint'>生成后可直接下载导出的图片和 PDF。</p>"
+                    value=(
+                        "### Output\n"
+                        "<p class='demo-hint'>Preview shows the selected page image. "
+                        "Downloads include every rendered PNG page plus a combined PDF.</p>"
+                    )
                 )
-                preview_output = gr.Image(label="预览图", type="pil")
-                png_output = gr.File(label="PNG 下载")
-                pdf_output = gr.File(label="PDF 下载")
+                preview_output = gr.Image(label="Preview Page", type="pil")
+                png_output = gr.File(label="PNG Pages", file_count="multiple")
+                pdf_output = gr.File(label="PDF Document")
 
         generate_button.click(
-            fn=generate_demo_artifacts,
+            fn=generate_demo_document_artifacts,
             inputs=[
                 text_input,
                 style_input,
