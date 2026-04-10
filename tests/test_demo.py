@@ -109,3 +109,35 @@ def test_build_demo_includes_reflected_defaults_in_choices(monkeypatch) -> None:
         assert "自由布局" in layout_input.choices
 
     importlib.reload(demo_app)
+
+
+def test_export_handwriting_dispatches_pdf_via_public_api(monkeypatch, tmp_path) -> None:
+    page = object()
+    output_path = tmp_path / "page.pdf"
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(demo_app, "generate_handwriting", lambda *args, **kwargs: page)
+
+    def fake_export(image, destination, format="png", **kwargs):
+        captured["image"] = image
+        captured["destination"] = destination
+        captured["format"] = format
+        captured["kwargs"] = kwargs
+        return output_path
+
+    monkeypatch.setattr(handwrite, "export", fake_export, raising=False)
+
+    written_path = demo_app.export_handwriting(
+        "浣犲ソ",
+        output_path,
+        format="pdf",
+        font_size=96,
+    )
+
+    assert written_path == output_path
+    assert captured == {
+        "image": page,
+        "destination": output_path,
+        "format": "pdf",
+        "kwargs": {},
+    }

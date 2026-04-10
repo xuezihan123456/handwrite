@@ -2,6 +2,7 @@
 
 from PIL import Image
 
+from . import exporter as _exporter
 from handwrite.composer import (
     CURSIVE_LAYOUT,
     GRID_PAPER,
@@ -55,6 +56,16 @@ def generate(
     """Generate a single handwriting page image."""
     images = [char(c, style=style) for c in text if c not in {" ", "\n"}]
     return compose_page(images, text, font_size=font_size, layout=layout, paper=paper)
+
+
+def export(page: Image.Image, output_path, format: str = "png", **kwargs):
+    """Export a generated page as PNG or PDF."""
+    normalized_format = format.lower()
+    if normalized_format == "png":
+        return _exporter.export_png(page, output_path, **kwargs)
+    if normalized_format == "pdf":
+        return _exporter.export_pdf(page, output_path, **kwargs)
+    raise ValueError("format must be 'png' or 'pdf'")
 
 
 def generate_pages(text: str, **kwargs) -> list[Image.Image]:

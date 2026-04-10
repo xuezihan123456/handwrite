@@ -1,6 +1,7 @@
 from PIL import Image
 
 import handwrite
+import handwrite.exporter as exporter_module
 
 
 def test_list_styles_exposes_builtin_names() -> None:
@@ -55,4 +56,27 @@ def test_generate_uses_human_facing_defaults(monkeypatch) -> None:
         "font_size": 80,
         "layout": "自然",
         "paper": "白纸",
+    }
+
+
+def test_export_dispatches_pdf_to_exporter(monkeypatch, tmp_path) -> None:
+    page = Image.new("L", (2480, 3508), color=255)
+    output_path = tmp_path / "page.pdf"
+    captured: dict[str, object] = {}
+
+    def fake_export_pdf(image, destination, dpi=300):
+        captured["image"] = image
+        captured["destination"] = destination
+        captured["dpi"] = dpi
+        return output_path
+
+    monkeypatch.setattr(exporter_module, "export_pdf", fake_export_pdf, raising=False)
+
+    written_path = handwrite.export(page, output_path, format="pdf", dpi=144)
+
+    assert written_path == output_path
+    assert captured == {
+        "image": page,
+        "destination": output_path,
+        "dpi": 144,
     }

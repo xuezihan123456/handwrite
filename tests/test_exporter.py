@@ -1,8 +1,9 @@
 from pathlib import Path
+import re
 
 from PIL import Image
 
-from handwrite.exporter import export_pages_png, export_png
+from handwrite.exporter import export_pages_pdf, export_pages_png, export_pdf, export_png
 
 
 def test_export_png_writes_a_readable_png_file(tmp_path: Path) -> None:
@@ -63,3 +64,35 @@ def test_export_pages_png_sanitizes_path_like_prefix(tmp_path: Path) -> None:
     assert written_paths == [expected_path]
     assert expected_path.exists()
     assert escaped_path.exists() is False
+
+
+def test_export_pdf_writes_a_readable_pdf_file(tmp_path: Path) -> None:
+    output_path = tmp_path / "exports" / "page.pdf"
+    page = Image.new("L", (1200, 1600), color=255)
+
+    written_path = export_pdf(page, output_path, dpi=300)
+
+    assert written_path == output_path
+    assert output_path.exists()
+
+    pdf_bytes = output_path.read_bytes()
+    assert pdf_bytes.startswith(b"%PDF")
+    assert re.search(rb"/Type\s*/Page\b", pdf_bytes) is not None
+
+
+def test_export_pages_pdf_writes_a_multi_page_pdf_file(tmp_path: Path) -> None:
+    output_path = tmp_path / "exports" / "batch.pdf"
+    pages = [
+        Image.new("L", (800, 1200), color=255),
+        Image.new("L", (810, 1210), color=240),
+        Image.new("L", (820, 1220), color=225),
+    ]
+
+    written_path = export_pages_pdf(pages, output_path, dpi=200)
+
+    assert written_path == output_path
+    assert output_path.exists()
+
+    pdf_bytes = output_path.read_bytes()
+    assert pdf_bytes.startswith(b"%PDF")
+    assert len(re.findall(rb"/Type\s*/Page\b", pdf_bytes)) == 3
