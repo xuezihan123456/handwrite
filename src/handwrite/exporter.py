@@ -29,6 +29,51 @@ def export_png(page: Image.Image, output_path: PathLike, dpi: int = 300) -> Path
     return path
 
 
+def _prepare_pdf_page(page: Image.Image) -> Image.Image:
+    if page.mode == "RGB":
+        return page
+
+    if page.mode in {"RGBA", "LA"} or (page.mode == "P" and "transparency" in page.info):
+        alpha_page = page.convert("RGBA")
+        background = Image.new("RGB", alpha_page.size, color="white")
+        background.paste(alpha_page, mask=alpha_page.getchannel("A"))
+        return background
+
+    return page.convert("RGB")
+
+
+def export_pdf(page: Image.Image, output_path: PathLike, dpi: int = 300) -> Path:
+    """Save a page image as a single-page PDF."""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pdf_page = _prepare_pdf_page(page)
+    pdf_page.save(path, format="PDF", resolution=float(dpi))
+    return path
+
+
+def export_pages_pdf(
+    pages: Iterable[Image.Image],
+    output_path: PathLike,
+    dpi: int = 300,
+) -> Path:
+    """Save multiple page images as a multi-page PDF."""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pdf_pages = [_prepare_pdf_page(page) for page in pages]
+    if not pdf_pages:
+        raise ValueError("pages must contain at least one page")
+
+    first_page, *remaining_pages = pdf_pages
+    first_page.save(
+        path,
+        format="PDF",
+        save_all=True,
+        append_images=remaining_pages,
+        resolution=float(dpi),
+    )
+    return path
+
+
 def export_pages_png(
     pages: Iterable[Image.Image],
     output_dir: PathLike,

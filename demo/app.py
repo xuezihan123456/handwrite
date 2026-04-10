@@ -47,6 +47,29 @@ def generate_handwriting(
     )
 
 
+def export_handwriting(
+    text: str,
+    output_path,
+    format: str = "png",
+    style: str = _DEFAULTS["style"],
+    paper: str = _DEFAULTS["paper"],
+    layout: str = _DEFAULTS["layout"],
+    font_size: int = _DEFAULTS["font_size"],
+    **export_kwargs,
+):
+    """Generate and export a handwriting page for the demo."""
+    page = generate_handwriting(
+        text=text,
+        style=style,
+        paper=paper,
+        layout=layout,
+        font_size=font_size,
+    )
+    if page is None:
+        return None
+    return handwrite.export(page, output_path, format=format, **export_kwargs)
+
+
 def build_demo():
     """Build the interactive Gradio demo."""
     import gradio as gr
