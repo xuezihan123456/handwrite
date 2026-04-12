@@ -26,3 +26,10 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+
+[tool.setuptools.package-data]
+handwrite = [
+    "assets/prototypes/*/manifest.json",
+    "assets/prototypes/*/glyphs/*.png",
+]

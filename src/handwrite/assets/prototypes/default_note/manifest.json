@@ -1,0 +1,60 @@
+{
+  "name": "default_note",
+  "glyphs": [
+    {
+      "char": "你",
+      "file": "glyphs/U4F60.png",
+      "writer_id": "starter"
+    },
+    {
+      "char": "学",
+      "file": "glyphs/U5B66.png",
+      "writer_id": "starter"
+    },
+    {
+      "char": "习",
+      "file": "glyphs/U4E60.png",
+      "writer_id": "starter"
+    },
+    {
+      "char": "课",
+      "file": "glyphs/U8BFE.png",
+      "writer_id": "starter"
+    },
+    {
+      "char": "堂",
+      "file": "glyphs/U5802.png",
+      "writer_id": "starter"
+    },
+    {
+      "char": "笔",
+      "file": "glyphs/U7B14.png",
+      "writer_id": "starter"
+    },
+    {
+      "char": "记",
+      "file": "glyphs/U8BB0.png",
+      "writer_id": "starter"
+    },
+    {
+      "char": "，",
+      "file": "glyphs/UFF0C.png",
+      "writer_id": "starter"
+    },
+    {
+      "char": "。",
+      "file": "glyphs/U3002.png",
+      "writer_id": "starter"
+    },
+    {
+      "char": "1",
+      "file": "glyphs/U0031.png",
+      "writer_id": "starter"
+    },
+    {
+      "char": "A",
+      "file": "glyphs/U0041.png",
+      "writer_id": "starter"
+    }
+  ]
+}

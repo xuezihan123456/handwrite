@@ -12,6 +12,7 @@ BUILTIN_STYLES = {
     "偏瘦紧凑": 3,
     "随意潦草": 4,
 }
+DEFAULT_STYLE_NAME = "行书流畅"
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,11 @@ class StyleDefinition:
 def list_style_names() -> list[str]:
     """Return built-in style names in stable order."""
     return list(BUILTIN_STYLES.keys())
+
+
+def default_style_name() -> str:
+    """Return the preferred default style for user-facing note generation."""
+    return DEFAULT_STYLE_NAME
 
 
 def load_selected_styles(path: Union[str, Path]) -> list[StyleDefinition]:
@@ -43,4 +49,11 @@ def load_selected_styles(path: Union[str, Path]) -> list[StyleDefinition]:
     ]
 
 
-__all__ = ["BUILTIN_STYLES", "StyleDefinition", "list_style_names", "load_selected_styles"]
+__all__ = [
+    "BUILTIN_STYLES",
+    "DEFAULT_STYLE_NAME",
+    "StyleDefinition",
+    "default_style_name",
+    "list_style_names",
+    "load_selected_styles",
+]

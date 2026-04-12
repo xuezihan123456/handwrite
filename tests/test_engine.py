@@ -7,6 +7,7 @@ import torch
 
 from handwrite.engine.generator import Generator
 from handwrite.engine.model import StyleEngine
+from handwrite.prototypes import load_builtin_prototype_library, load_prototype_library
 
 
 def _assert_visible_grayscale_image(image: Image.Image) -> None:
@@ -76,6 +77,29 @@ def _save_real_generator_weights(
     )
     torch.save(payload, weights_path)
     return expected_embedding, weights_path
+
+
+def _write_custom_prototype_pack(tmp_path: Path, *, char: str = "龘") -> Path:
+    pack_dir = tmp_path / "custom-pack"
+    glyph_dir = pack_dir / "glyphs"
+    glyph_dir.mkdir(parents=True, exist_ok=True)
+    glyph_path = glyph_dir / f"U{ord(char):04X}.png"
+    image = Image.new("L", (256, 256), color=255)
+    image.paste(32, (88, 88, 168, 168))
+    image.save(glyph_path)
+    manifest_path = pack_dir / "manifest.json"
+    manifest_path.write_text(
+        (
+            "{\n"
+            '  "name": "custom-pack",\n'
+            '  "glyphs": [\n'
+            f'    {{"char": "{char}", "file": "glyphs/U{ord(char):04X}.png", "writer_id": "custom"}}\n'
+            "  ]\n"
+            "}\n"
+        ),
+        encoding="utf-8",
+    )
+    return manifest_path
 
 
 def test_style_engine_constructs_and_generates_without_default_fonts(
@@ -272,6 +296,7 @@ def test_generate_char_respects_explicitly_empty_supported_chars(
 ) -> None:
     _disable_default_runtime_candidates(monkeypatch, tmp_path)
     engine = StyleEngine(supported_chars=set())
+    engine.prototype_library = None
     fallback_image = Image.new("L", (256, 256), color=160)
 
     monkeypatch.setattr(
@@ -293,26 +318,108 @@ def test_generate_char_respects_explicitly_empty_supported_chars(
 
     assert image is fallback_image
 
-
-def test_generate_char_falls_back_for_unsupported_char(
+def test_generate_char_prefers_prototype_glyph_when_model_is_unavailable(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     _disable_default_runtime_candidates(monkeypatch, tmp_path)
-    engine = StyleEngine(supported_chars={"\u4f60"})
-
-    monkeypatch.setattr(
-        engine,
-        "_gan_generate",
-        lambda char, style_id: pytest.fail(
-            f"Unexpected supported-char path for unsupported input: {char}/{style_id}"
-        ),
-        raising=False,
+    prototype_library = load_builtin_prototype_library()
+    engine = StyleEngine(
+        supported_chars={"学"},
+        prototype_library=prototype_library,
     )
 
-    image = engine.generate_char("\u597d", 1)
+    generated = engine.generate_char("你", 2)
+    prototype = prototype_library.get_glyph_image("你")
 
-    _assert_visible_grayscale_image(image)
+    assert generated.tobytes() == prototype.tobytes()
 
+
+def test_generate_char_avoids_default_note_prototypes_for_non_default_styles(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _disable_default_runtime_candidates(monkeypatch, tmp_path)
+    prototype_library = load_builtin_prototype_library()
+    engine = StyleEngine(
+        supported_chars={"学"},
+        prototype_library=prototype_library,
+    )
+
+    generated = engine.generate_char("你", 0)
+    prototype = prototype_library.get_glyph_image("你")
+
+    assert generated.tobytes() != prototype.tobytes()
+
+
+def test_generate_char_uses_custom_prototype_pack_for_note_style(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _disable_default_runtime_candidates(monkeypatch, tmp_path)
+    manifest_path = _write_custom_prototype_pack(tmp_path)
+    engine = StyleEngine(
+        supported_chars={"学"},
+        prototype_pack=manifest_path,
+    )
+
+    generated = engine.generate_char("龘", 2)
+    prototype = load_prototype_library(manifest_path).get_glyph_image("龘")
+
+    assert generated.tobytes() == prototype.tobytes()
+    assert engine.prototype_library is not None
+    assert engine.prototype_library.name == "custom-pack"
+
+
+def test_inspect_char_reports_fallback_for_low_realism_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _disable_default_runtime_candidates(monkeypatch, tmp_path)
+    engine = StyleEngine(
+        supported_chars={"学"},
+        prototype_library=load_builtin_prototype_library(),
+    )
+
+    inspection = engine.inspect_char("龘", 0)
+
+    assert inspection["route"] == "fallback"
+    assert inspection["is_low_realism"] is True
+    assert inspection["char"] == "龘"
+
+
+def test_inspect_text_reports_prototype_and_fallback_routes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _disable_default_runtime_candidates(monkeypatch, tmp_path)
+    engine = StyleEngine(
+        supported_chars={"学"},
+        prototype_library=load_builtin_prototype_library(),
+    )
+    monkeypatch.setattr(engine, "_generator", object(), raising=False)
+
+    report = engine.inspect_text("你学龘", 2)
+
+    assert report["prototype_covered_characters"] == ["你"]
+    assert report["model_supported_characters"] == ["学"]
+    assert report["fallback_characters"] == ["龘"]
+    assert report["style"] == "行书流畅"
+    assert report["total_characters"] == 3
+
+
+def test_inspect_text_reports_custom_prototype_pack_metadata(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _disable_default_runtime_candidates(monkeypatch, tmp_path)
+    manifest_path = _write_custom_prototype_pack(tmp_path)
+    engine = StyleEngine(
+        supported_chars={"学"},
+        prototype_pack=manifest_path.parent,
+    )
+
+    report = engine.inspect_text("龘学", 2)
+
+    assert report["prototype_pack_name"] == "custom-pack"
+    assert report["prototype_source"] == str(manifest_path.resolve())
+    assert report["prototype_source_kind"] == "custom"
+    assert report["prototype_covered_characters"] == ["龘"]
+    assert report["model_supported_characters"] == []
 
 def test_generate_char_rejects_style_ids_not_supported_by_loaded_checkpoint(
     monkeypatch: pytest.MonkeyPatch, tmp_path

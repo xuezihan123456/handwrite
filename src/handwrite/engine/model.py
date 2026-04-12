@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
-from typing import Collection
+from typing import Any, Collection
 
 import numpy as np
 import torch
@@ -13,9 +14,13 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 from handwrite.data.charsets import get_charset
 from handwrite.data.font_renderer import render_standard_char
 from handwrite.engine.generator import Generator
+from handwrite.prototypes import PrototypeLibrary, load_prototype_library
 from handwrite.styles import BUILTIN_STYLES
 
 _DEFAULT_FONT_CANDIDATES = (
+    Path("C:/Windows/Fonts/STXINGKA.TTF"),
+    Path("C:/Windows/Fonts/STKAITI.TTF"),
+    Path("C:/Windows/Fonts/simkai.ttf"),
     Path(__file__).resolve().parents[3] / "data" / "fonts" / "NotoSerifSC-Regular.otf",
     Path("C:/Windows/Fonts/NotoSerifSC-VF.ttf"),
     Path("C:/Windows/Fonts/NotoSansSC-VF.ttf"),
@@ -39,6 +44,8 @@ _STYLE_VARIANTS: dict[int, tuple[float, tuple[int, int], float]] = {
     3: (1.5, (-1, 1), 0.0),
     4: (3.0, (-2, 1), 0.6),
 }
+_STYLE_NAMES_BY_ID = {style_id: name for name, style_id in BUILTIN_STYLES.items()}
+_NOTE_STYLE_ID = BUILTIN_STYLES.get("行书流畅", 0)
 
 
 class StyleEngine:
@@ -51,6 +58,8 @@ class StyleEngine:
         image_size: int = 256,
         char_size: int = 200,
         weights_path: str | Path | None = None,
+        prototype_library: PrototypeLibrary | None = None,
+        prototype_pack: str | Path | None = None,
     ) -> None:
         self.font_path = self._resolve_font_path(font_path)
         if supported_chars is None:
@@ -62,6 +71,11 @@ class StyleEngine:
         self.valid_style_ids = frozenset(BUILTIN_STYLES.values())
         self._generator_num_styles = max(self.valid_style_ids) + 1 if self.valid_style_ids else 0
         self._generator = self._load_generator(weights_path)
+        self.prototype_library = (
+            prototype_library
+            if prototype_library is not None
+            else self._load_prototype_library(prototype_pack)
+        )
 
     def generate_char(self, char: str, style_id: int) -> Image.Image:
         """Generate a single grayscale character image for the requested style."""
@@ -69,33 +83,128 @@ class StyleEngine:
 
         if char in self.supported_chars:
             return self._gan_generate(char, style_id)
+
+        prototype_image = self._prototype_generate(char, style_id)
+        if prototype_image is not None:
+            return prototype_image
         return self._fallback_render(char)
 
+    def inspect_char(self, char: str, style_id: int) -> dict[str, Any]:
+        """Describe which realism route a character will use."""
+        self._validate_style_id(style_id)
+
+        if self._generator is not None and char in self.supported_chars:
+            return {"char": char, "route": "model", "is_low_realism": False}
+        prototype_library = self._prototype_library_for_style(style_id)
+        if prototype_library is not None and prototype_library.has_char(char):
+            return {"char": char, "route": "prototype", "is_low_realism": False}
+        return {"char": char, "route": "fallback", "is_low_realism": True}
+
+    def inspect_text(self, text: str, style_id: int) -> dict[str, Any]:
+        """Summarize text coverage before generation."""
+        unique_characters = list(dict.fromkeys(char for char in text if not char.isspace()))
+        prototype_covered_characters: list[str] = []
+        model_supported_characters: list[str] = []
+        fallback_characters: list[str] = []
+        for char in unique_characters:
+            inspection = self.inspect_char(char, style_id)
+            route = inspection["route"]
+            if route == "model":
+                model_supported_characters.append(char)
+            elif route == "prototype":
+                prototype_covered_characters.append(char)
+            else:
+                fallback_characters.append(char)
+        return {
+            "style": _STYLE_NAMES_BY_ID.get(style_id, f"style:{style_id}"),
+            "total_characters": sum(1 for char in text if not char.isspace()),
+            "unique_characters": unique_characters,
+            "prototype_covered_characters": prototype_covered_characters,
+            "model_supported_characters": model_supported_characters,
+            "fallback_characters": fallback_characters,
+            "prototype_pack_name": self._prototype_pack_name(style_id),
+            "prototype_source": self._prototype_source(style_id),
+            "prototype_source_kind": self._prototype_source_kind(style_id),
+            "summary": (
+                f"{len(prototype_covered_characters) + len(model_supported_characters)} / "
+                f"{len(unique_characters)} characters are in a higher-realism path."
+            ) if unique_characters else "No non-whitespace characters to inspect.",
+        }
+
     def _gan_generate(self, char: str, style_id: int) -> Image.Image:
-        """Use a loaded generator when available, otherwise apply placeholder transforms."""
+        """Use a loaded generator when available, then fall back to prototypes and note rendering."""
         model_image = self._model_generate(char, style_id)
         if model_image is not None:
             return model_image
 
-        image = self._render_reference_char(char)
-        angle, offset, blur_radius = _STYLE_VARIANTS[style_id]
+        prototype_image = self._prototype_generate(char, style_id)
+        if prototype_image is not None:
+            return prototype_image
 
-        if angle:
-            image = image.rotate(
+        return self._fallback_render(char)
+
+    def _prototype_generate(self, char: str, style_id: int) -> Image.Image | None:
+        prototype_library = self._prototype_library_for_style(style_id)
+        if prototype_library is None or not prototype_library.has_char(char):
+            return None
+        image = prototype_library.get_glyph_image(char)
+        if image.size != (self.image_size, self.image_size):
+            image = image.resize((self.image_size, self.image_size), Image.Resampling.LANCZOS)
+        return image
+
+    def _fallback_render(self, char: str, style_id: int | None = None) -> Image.Image:
+        image = self._render_reference_char(char)
+        resolved_style_id = _NOTE_STYLE_ID if style_id is None else style_id
+        return self._stylize_fallback_image(image, char=char, style_id=resolved_style_id)
+
+    def _stylize_fallback_image(self, image: Image.Image, *, char: str, style_id: int) -> Image.Image:
+        seed_payload = f"{char}:{style_id}".encode("utf-8")
+        seed = int.from_bytes(hashlib.sha256(seed_payload).digest()[:8], "big")
+        rng = np.random.default_rng(seed)
+
+        styled = image.copy()
+        angle, offset, blur_radius = _STYLE_VARIANTS.get(style_id, _STYLE_VARIANTS[0])
+        angle += float(rng.normal(0.0, 0.85))
+        if abs(angle) > 0.05:
+            styled = styled.rotate(
                 angle,
                 resample=Image.Resampling.BICUBIC,
                 fillcolor=255,
             )
-        if offset != (0, 0):
-            image = ImageChops.offset(image, offset[0], offset[1])
-            self._fill_wrapped_edges(image, offset)
+
+        jittered_offset = (
+            offset[0] + int(round(rng.uniform(-2.0, 2.0))),
+            offset[1] + int(round(rng.uniform(-2.0, 2.0))),
+        )
+        if jittered_offset != (0, 0):
+            styled = ImageChops.offset(styled, jittered_offset[0], jittered_offset[1])
+            self._fill_wrapped_edges(styled, jittered_offset)
+
+        scale = 1.0 + float(rng.uniform(-0.06, 0.015))
+        if abs(scale - 1.0) > 0.01:
+            resized_width = max(1, int(round(styled.width * scale)))
+            resized_height = max(1, int(round(styled.height * scale)))
+            resized = styled.resize((resized_width, resized_height), Image.Resampling.LANCZOS)
+            canvas = Image.new("L", (self.image_size, self.image_size), color=255)
+            offset_x = (self.image_size - resized_width) // 2
+            offset_y = (self.image_size - resized_height) // 2
+            canvas.paste(resized, (offset_x, offset_y))
+            styled = canvas
+
+        if rng.random() < 0.5:
+            styled = styled.filter(ImageFilter.MinFilter(3))
+        elif rng.random() < 0.35:
+            styled = styled.filter(ImageFilter.MaxFilter(3))
+
         if blur_radius:
-            image = image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+            styled = styled.filter(ImageFilter.GaussianBlur(radius=max(0.1, blur_radius)))
 
-        return image
-
-    def _fallback_render(self, char: str) -> Image.Image:
-        return self._render_reference_char(char)
+        array = np.asarray(styled, dtype=np.int16)
+        ink_mask = array < 250
+        if ink_mask.any():
+            noise = rng.normal(loc=0.0, scale=6.0, size=array.shape)
+            array = np.where(ink_mask, np.clip(array + noise, 0, 255), array)
+        return Image.fromarray(array.astype(np.uint8), mode="L")
 
     def _render_reference_char(self, char: str) -> Image.Image:
         if self.font_path is None:
@@ -115,6 +224,11 @@ class StyleEngine:
         if style_id not in self._supported_style_ids():
             raise ValueError(f"Unsupported style_id: {style_id}")
 
+    def _prototype_library_for_style(self, style_id: int) -> PrototypeLibrary | None:
+        if style_id != _NOTE_STYLE_ID:
+            return None
+        return self.prototype_library
+
     def _supported_style_ids(self) -> frozenset[int]:
         if self._generator is None:
             return self.valid_style_ids
@@ -129,13 +243,32 @@ class StyleEngine:
         for candidate in candidates:
             if candidate.exists():
                 return candidate
-
         return None
 
-    def _resolve_weights_path(self, weights_path: str | Path | None) -> Path | None:
-        for candidate in self._resolve_weights_candidates(weights_path):
-            return candidate
-        return None
+    @staticmethod
+    def _load_prototype_library(prototype_pack: str | Path | None) -> PrototypeLibrary | None:
+        try:
+            return load_prototype_library(prototype_pack)
+        except Exception:
+            return None
+
+    def _prototype_pack_name(self, style_id: int) -> str | None:
+        prototype_library = self._prototype_library_for_style(style_id)
+        if prototype_library is None:
+            return None
+        return prototype_library.name
+
+    def _prototype_source(self, style_id: int) -> str | None:
+        prototype_library = self._prototype_library_for_style(style_id)
+        if prototype_library is None:
+            return None
+        return prototype_library.prototype_source
+
+    def _prototype_source_kind(self, style_id: int) -> str:
+        prototype_library = self._prototype_library_for_style(style_id)
+        if prototype_library is None:
+            return "disabled"
+        return prototype_library.source_kind
 
     def _resolve_weights_candidates(self, weights_path: str | Path | None) -> tuple[Path, ...]:
         if weights_path is not None:

@@ -1,24 +1,20 @@
 # HandWrite
 
-AI Chinese handwriting generator built with Python, PyTorch, and Pillow.
+Chinese classroom-note handwriting generator built with Python, PyTorch, and Pillow.
 
-这是一个基于 Python、PyTorch 和 Pillow 的中文手写体生成项目。
-
-## Readme
-
-- 中文文档: [README.zh-CN.md](./README.zh-CN.md)
-- English documentation: [README.en.md](./README.en.md)
+中文说明: [README.zh-CN.md](./README.zh-CN.md)  
+English guide: [README.en.md](./README.en.md)
 
 ## Current Status
 
-- Package/API scaffold: available
-- Data preprocessing pipeline: available
-- Generator/Discriminator definitions: available
-- Training loop and training CLI: available
-- Evaluation script: available
-- Demo entrypoint: available
-- Real pretrained weights: not included in this repository
-- PDF export: not implemented yet
+- Installable Python package under `src/handwrite`
+- CASIA `.gnt` preprocessing pipeline and training/evaluation skeleton
+- Single-character, single-page, and multi-page generation APIs
+- PNG export, single-page PDF export, and multi-page PDF export
+- Gradio demo with precheck/report flow plus multi-page preview/downloads
+- Starter note-realism prototype pack for the default classroom-note loop
+- Local prototype-library builder path for larger private packs
+- No real pretrained weights bundled in this repository
 
 ## Quick Start
 
@@ -30,27 +26,83 @@ pytest
 python demo/app.py
 ```
 
-## Python API
+## Core Usage
 
 ```python
 import handwrite
 
-img = handwrite.char("你", style="工整楷书")
-page = handwrite.generate("今天天气真不错。", style="工整楷书")
-pages = handwrite.generate_pages("长文本内容" * 200, style="工整楷书")
-print(handwrite.list_styles())
+styles = handwrite.list_styles()
+report = handwrite.inspect_text("今天上课主要讲了牛顿第二定律和两个例题。")
+page = handwrite.generate(
+    "今天上课主要讲了牛顿第二定律和两个例题。",
+    style="行书流畅",
+    paper="横线纸",
+    layout="自然",
+    font_size=80,
+)
+pages = handwrite.generate_pages(
+    "课堂笔记内容" * 80,
+    style="行书流畅",
+    paper="横线纸",
+    layout="自然",
+    font_size=80,
+)
+
+handwrite.export(page, "output/page.png", format="png", dpi=300)
+handwrite.export_pages(pages, "output/note.pdf", format="pdf", dpi=300)
 ```
+
+## Full Product Flow
+
+If you want the classroom-note product loop, the intended path is:
+
+1. build a larger local pack with `scripts/build_prototype_library.py`
+2. point runtime or the demo at that pack through `prototype_pack`
+3. inspect coverage first, then generate/export
+
+```python
+import handwrite
+
+prototype_pack = "data/prototypes/my_note_pack"
+
+report = handwrite.inspect_text(
+    "今天上课主要讲了牛顿第二定律和两个例题。",
+    style="行书流畅",
+    prototype_pack=prototype_pack,
+)
+print(report["prototype_source"]["label"])
+
+page = handwrite.generate(
+    "今天上课主要讲了牛顿第二定律和两个例题。",
+    style="行书流畅",
+    paper="横线纸",
+    layout="自然",
+    font_size=80,
+    prototype_pack=prototype_pack,
+)
+```
+
+The precheck report now includes the active source, so the user can see whether they are still on the built-in starter pack or already using a local expanded pack.
 
 ## Scripts
 
 ```bash
+python scripts/download_data.py --scan_dir downloads --raw_dir data/raw
 python scripts/preprocess.py --raw_dir data/raw/HWDB1.0trn_gnt --output_dir data/processed --font_path data/fonts/NotoSerifSC-Regular.otf
+python scripts/build_prototype_library.py --metadata data/processed/metadata.json --output_dir data/prototypes/default_note
+python scripts/note_session.py --preset 牛顿定律复习 --output_dir output/session
 python scripts/train.py --data_dir data/processed --styles_file data/processed/selected_styles.json --output_dir weights
 python scripts/evaluate.py --output-dir evaluation
+python demo/app.py
 ```
 
-## Notes
+## Practical Notes
 
-- If no trained generator weights are found, the current inference wrapper degrades gracefully to a fallback rendering path.
-- Evaluation includes a lightweight Frechet-style score for MVP use; it is not a full `pytorch-fid` integration.
-- Large datasets and model weights should stay out of git.
+- `handwrite.inspect_text(...)` is the note-product precheck. It reports likely low-realism characters before generation and gives advisory suggestions. It does not rewrite user text.
+- The repo ships a small starter prototype pack so the classroom-note loop works out of the box, but it is not a full 2000+ handwritten asset body.
+- `scripts/build_prototype_library.py` is the scale-up path. Use it to build a larger local prototype pack from your own processed handwriting data, then pass that path into `prototype_pack` in the public API or the demo.
+- `scripts/note_session.py` is the product-facing CLI entry. It takes inline text, a UTF-8 text file, or a built-in preset, then emits PNG pages, a PDF, and a markdown session report in one run.
+- The demo now includes built-in classroom-note presets so you can load a sample note before editing it into your own content.
+- If `prototype_pack` points to a missing directory or manifest, the demo reports a friendly error instead of failing silently.
+- Active source reporting is part of the product contract. The report tells you whether the current run is using the built-in starter pack, a local expanded pack, or a disabled prototype route for the selected style.
+- When real generator weights are unavailable, runtime falls back to prototype-backed or font-based note rendering. That keeps the product loop usable, but it is still not proof of trained-model quality.
