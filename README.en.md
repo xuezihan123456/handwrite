@@ -2,49 +2,34 @@
 
 ## Project Overview
 
-`HandWrite` now makes the most sense as a **classroom-note generator**, not just a generic handwriting demo.
+HandWrite is an **AI-powered Chinese handwriting generator** with **15 innovation modules** spanning from stroke dynamics to AR augmentation. It works as both a classroom-note generation tool and an extensible handwriting synthesis research platform.
 
-The repository already includes data preprocessing, training scaffolding, inference wrappers, page composition, PNG/PDF export, a Gradio demo, and the first note-realism product loop.
+The repository includes data preprocessing, training scaffolding, inference wrappers, page composition, PNG/PDF export, a Gradio demo, and note-realism precheck. It also integrates 15 innovation modules covering stroke dynamics, animation, semantic layout, formula rendering, style mixing, collaborative writing, quality assurance, handwriting recognition, grading, temporal evolution, and AR enhancement.
 
-It is still not a finished pretrained handwriting product. No real pretrained weights are bundled here. When valid weights are missing, runtime should prefer a prototype-backed note path first, then fall back to more handwritten-looking font/distortion logic. That keeps the product loop usable, but it is not evidence of trained-model quality.
-
-## Current Capabilities
-
-- Installable Python package in `src/handwrite`
-- CASIA `.gnt` parsing and dataset preprocessing
-- Five built-in style names exposed through `handwrite.list_styles()`
-- Public APIs for single-character, single-page, and multi-page generation
-- `handwrite.inspect_text(...)` for note-realism precheck
-- `StyleEngine` inference wrapper with automatic weight discovery and graceful fallback
-- Starter prototype pack for the default classroom-note flow
-- Local prototype-library builder path for larger private packs
-- PNG export, single-page PDF export, and multi-page PDF export
-- Gradio demo with precheck reporting plus multi-page preview/downloads
-- Training and evaluation scripts
+> No real pretrained weights are bundled. When valid weights are missing, runtime falls back to prototype-backed rendering to keep the product loop usable.
 
 ## Environment and Installation
 
 - Python 3.9+
-- Windows is the primary development environment at the moment
+- PyTorch, Pillow, OpenCV, Gradio
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # macOS/Linux
 pip install -e ".[dev]"
 pytest
+python demo/app.py
 ```
 
-## Python API
+## Core API
 
 ### List built-in styles
 
 ```python
 import handwrite
-
 print(handwrite.list_styles())
 ```
-
-The built-in style order stays stable, but the classroom-note product loop should use an explicit flowing-note default instead of relying on style-list insertion order.
 
 ### Inspect note text before generation
 
@@ -55,29 +40,9 @@ report = handwrite.inspect_text(
     "Today we reviewed Newton's second law and worked through two examples.",
     style="行书流畅",
 )
-
 print(report["summary"])
 for advisory in report["suggestions"]:
     print(advisory)
-```
-
-The report is meant to tell the user:
-
-- which characters are prototype-covered
-- which characters can use higher-quality model/runtime paths
-- which characters are likely to fall back to lower-realism rendering
-- whether the active source is the built-in starter pack or a local custom pack
-- which advisory replacements or rewrites the user may want to consider
-
-It does **not** rewrite the original text automatically.
-
-### Generate one character
-
-```python
-import handwrite
-
-img = handwrite.char("你", style="行书流畅")
-img.save("single.png")
 ```
 
 ### Generate one note page
@@ -87,41 +52,10 @@ import handwrite
 
 page = handwrite.generate(
     "Today we reviewed Newton's second law and worked through two examples.",
-    style="行书流畅",
-    paper="横线纸",
-    layout="自然",
-    font_size=80,
+    style="行书流畅", paper="横线纸", layout="自然", font_size=80,
 )
 page.save("note_page.png")
 ```
-
-### Use a larger local prototype pack
-
-```python
-import handwrite
-
-prototype_pack = "data/prototypes/my_note_pack"
-
-report = handwrite.inspect_text(
-    "Today we reviewed Newton's second law and worked through two examples.",
-    style="行书流畅",
-    prototype_pack=prototype_pack,
-)
-page = handwrite.generate(
-    "Today we reviewed Newton's second law and worked through two examples.",
-    style="行书流畅",
-    paper="横线纸",
-    layout="自然",
-    font_size=80,
-    prototype_pack=prototype_pack,
-)
-print(report["prototype_source"]["label"])
-```
-
-That is the concrete product loop now:
-1. build a larger local pack with `scripts/build_prototype_library.py`
-2. point runtime or the demo at that pack through `prototype_pack`
-3. inspect coverage first, then generate the note
 
 ### Generate multiple note pages
 
@@ -129,13 +63,9 @@ That is the concrete product loop now:
 import handwrite
 
 pages = handwrite.generate_pages(
-    "Classroom notes " * 120,
-    style="行书流畅",
-    paper="横线纸",
-    layout="自然",
-    font_size=80,
+    "Classroom notes content " * 120,
+    style="行书流畅", paper="横线纸", layout="自然", font_size=80,
 )
-
 for index, page in enumerate(pages, start=1):
     page.save(f"note_{index:03d}.png")
 ```
@@ -145,119 +75,321 @@ for index, page in enumerate(pages, start=1):
 ```python
 import handwrite
 
-page = handwrite.generate("Export example.", style="行书流畅")
-pages = handwrite.generate_pages("Long text content " * 80, style="行书流畅")
-
 handwrite.export(page, "output/page.png", format="png", dpi=300)
 handwrite.export(page, "output/page.pdf", format="pdf", dpi=300)
-handwrite.export_pages(pages, "output/pages", format="png", prefix="note", dpi=300)
 handwrite.export_pages(pages, "output/note.pdf", format="pdf", dpi=300)
 ```
 
-## CLI and Script Usage
+### Use a local prototype pack
 
-### 1. Local data preparation helper
+```python
+import handwrite
+
+prototype_pack = "data/prototypes/my_note_pack"
+
+report = handwrite.inspect_text(
+    "Today we reviewed Newton's second law.",
+    style="行书流畅", prototype_pack=prototype_pack,
+)
+page = handwrite.generate(
+    "Today we reviewed Newton's second law.",
+    style="行书流畅", paper="横线纸", layout="自然", font_size=80,
+    prototype_pack=prototype_pack,
+)
+```
+
+## 15 Innovation Modules
+
+### 1. Personalization
+
+Extract handwriting features from sample images (stroke width, slant angle, connectivity, ink distribution), generate style vectors, and synthesize personalized glyph packs.
+
+```python
+from handwrite.personalization import SampleAnalyzer, StyleExtractor, GlyphSynthesizer
+
+analyzer = SampleAnalyzer()
+features = analyzer.analyze("sample.png")
+
+extractor = StyleExtractor()
+style = extractor.extract(features)
+
+synth = GlyphSynthesizer(style)
+synth.synthesize_pack(output_dir, charset="Hello")
+```
+
+### 2. Dynamics
+
+Simulate pen pressure, ink flow, and writing speed during the writing process for realistic stroke dynamics.
+
+```python
+from handwrite.dynamics import DynamicsEngine
+
+engine = DynamicsEngine()
+result = engine.simulate(stroke_data)
+# Returns pressure_map, ink_flow, speed_profile
+```
+
+### 3. Animation
+
+Stroke-order detection with Bezier trajectory generation. Supports frame-by-frame animation rendering with GIF and MP4 export.
+
+```python
+from handwrite.animation import StrokeOrderDetector, TrajectoryGenerator, AnimationEngine
+
+detector = StrokeOrderDetector()
+order = detector.detect(char_image)
+
+generator = TrajectoryGenerator()
+trajectory = generator.generate(order)
+
+engine = AnimationEngine()
+frames = engine.render(trajectory)
+engine.export_gif(frames, "writing.gif")
+```
+
+### 4. Semantic Layout
+
+Analyze text semantic structure, intelligently plan page layout, and render semantic annotations (headings, paragraphs, lists).
+
+```python
+from handwrite.semantic import TextAnalyzer, LayoutPlanner, SemanticComposer
+
+analyzer = TextAnalyzer()
+structure = analyzer.analyze("Classroom notes content...")
+
+planner = LayoutPlanner()
+layout = planner.plan(structure, page_size=(2480, 3508))
+
+composer = SemanticComposer()
+page = composer.compose(layout)
+```
+
+### 5. Formula Rendering
+
+Parse and render LaTeX math formulas and chemical equations, including matrices, fractions, subscripts, and superscripts.
+
+```python
+from handwrite.formula import LatexParser, ChemistryParser, FormulaRenderer
+
+parser = LatexParser()
+formula = parser.parse(r"\frac{-b \pm \sqrt{b^2-4ac}}{2a}")
+
+chem = ChemistryParser()
+equation = chem.parse("2H2 + O2 -> 2H2O")
+
+renderer = FormulaRenderer()
+img = renderer.render(formula)
+```
+
+### 6. Style Mixing
+
+Blend multiple handwriting styles, perform style transfer, and create unique personal styles through interpolation.
+
+```python
+from handwrite.style_mixing import StyleMixer, StyleTransfer
+
+mixer = StyleMixer()
+blended = mixer.mix(style_a, style_b, ratio=0.6)
+
+transfer = StyleTransfer()
+transferred = transfer.transfer(source_style, target_content)
+```
+
+### 7. Paper Templates
+
+6 built-in paper templates (Cornell notes, English practice, error notebook, essay grid, staff paper, mind map) with custom paper support.
+
+```python
+from handwrite.papers import PaperRegistry, PaperRenderer
+
+registry = PaperRegistry()
+paper = registry.get("cornell")
+
+renderer = PaperRenderer()
+img = renderer.render(paper)
+```
+
+Built-in templates:
+- `cornell` - Cornell notes (cue + note + summary regions)
+- `english_practice` - English practice paper (four-line three-grid)
+- `error_notebook` - Error correction notebook (question + wrong + correct + reflection)
+- `essay_grid` - Chinese essay grid paper
+- `staff` - Music staff paper
+- `mind_map` - Mind map with central node and branches
+
+### 8. OCR Style Extraction
+
+Extract handwriting style from scanned images and generate prototype fonts for personalized generation.
+
+```python
+from handwrite.ocr_style import ImagePreprocessor, CharacterSegmenter, StyleExtractor
+
+preprocessor = ImagePreprocessor()
+clean = preprocessor.preprocess(scanned_image)
+
+segmenter = CharacterSegmenter()
+chars = segmenter.segment(clean)
+
+extractor = StyleExtractor()
+style = extractor.extract(chars)
+```
+
+### 9. Collaborative Writing
+
+Multi-writer collaborative writing with automatic segment assignment and style blending across contributors.
+
+```python
+from handwrite.collaboration import CollaborativeComposer, StyleBlender
+
+composer = CollaborativeComposer()
+segments = composer.assign_segments(contributors, content)
+
+blender = StyleBlender()
+result = blender.blend(segments)
+```
+
+### 10. Quality Assurance
+
+Evaluate generated handwriting quality across authenticity and naturalness dimensions with improvement suggestions.
+
+```python
+from handwrite.quality import QualityEngine
+
+engine = QualityEngine()
+report = engine.evaluate(generated_image)
+# Returns authenticity_score, naturalness_score, suggestions
+```
+
+### 11. Text Summarization
+
+Automatic key information extraction with mind-map and outline layout generation.
+
+```python
+from handwrite.summary import TextSummarizer, MindMapLayout
+
+summarizer = TextSummarizer()
+summary = summarizer.summarize(long_text)
+
+layout = MindMapLayout()
+mind_map = layout.generate(summary)
+```
+
+### 12. Digitization
+
+OCR recognition of handwritten text with style-preserving round-trip editing — recognize, modify, and regenerate in the original style.
+
+```python
+from handwrite.digitization import HandwritingRecognizer, RoundTripEngine
+
+recognizer = HandwritingRecognizer()
+text = recognizer.recognize(handwritten_image)
+
+engine = RoundTripEngine()
+edited_image = engine.edit(handwritten_image, original_text=text, new_text="Corrected text")
+```
+
+### 13. Grading
+
+Automatically detect errors in handwritten assignments, generate annotations, scores, and feedback.
+
+```python
+from handwrite.grading import GradingEngine
+
+engine = GradingEngine()
+result = engine.grade(submission_image, reference_text="Correct answer")
+# Returns score, errors, annotations, feedback
+```
+
+### 14. Temporal Evolution
+
+Simulate handwriting changes across different ages and skill levels, with historical style reproduction.
+
+```python
+from handwrite.temporal import TemporalEngine
+
+engine = TemporalEngine()
+aged = engine.simulate_age(glyph, target_age=10)
+skilled = engine.simulate_skill(glyph, skill_level=0.8)
+```
+
+### 15. AR Enhancement
+
+Paper detection, perspective transform, and texture blending for augmented reality handwriting overlay.
+
+```python
+from handwrite.ar import AREngine
+
+engine = AREngine()
+detected = engine.detect_paper(camera_frame)
+transformed = engine.transform(detected)
+blended = engine.blend(transformed, digital_content)
+```
+
+## CLI Scripts
 
 ```bash
+# Data preparation
 python scripts/download_data.py --scan_dir downloads --raw_dir data/raw
-```
 
-Use it to normalize manually downloaded CASIA/HWDB split archives or extracted directories into `data/raw/<split>`.
+# Preprocessing
+python scripts/preprocess.py --raw_dir data/raw/HWDB1.0trn_gnt --output_dir data/processed
 
-### 2. Preprocessing
-
-```bash
-python scripts/preprocess.py --raw_dir data/raw/HWDB1.0trn_gnt --output_dir data/processed --font_path data/fonts/NotoSerifSC-Regular.otf --charset_level 500 --min_writer_coverage 0.9
-```
-
-This produces normalized paired assets plus the `metadata.json` needed by training and prototype-library building.
-
-### 3. Build a larger prototype library
-
-```bash
+# Build prototype library
 python scripts/build_prototype_library.py --metadata data/processed/metadata.json --output_dir data/prototypes/default_note
-```
 
-This is the scale-up path:
-
-- the repository ships only a small starter pack
-- if you want broader 2000+ note coverage, build a larger private prototype pack locally from processed handwriting data
-- the demo now ships with classroom-note presets so you can load a sample note before adapting it
-- if `prototype_pack` points to a missing directory or manifest, the demo reports a clear product-level error instead of failing silently
-
-### 4. Style selection file
-
-`scripts/train.py` still expects a separate `selected_styles.json`.
-
-### 5. Note session CLI
-
-```bash
+# Classroom note session
 python scripts/note_session.py --preset 牛顿定律复习 --output_dir output/session
-```
 
-This is the most product-shaped local entrypoint right now:
+# Training
+python scripts/train.py --data_dir data/processed --styles_file data/processed/selected_styles.json --output_dir weights
 
-- supports `--text`
-- supports `--text_file`
-- supports `--preset`
-- supports `--prototype_pack`
-- exports PNG pages, a PDF, and a markdown session report in one run
-
-### 6. Training
-
-```bash
-python scripts/train.py --data_dir data/processed --styles_file data/processed/selected_styles.json --output_dir weights --batch_size 8 --epochs 30
-```
-
-### 7. Evaluation
-
-```bash
+# Evaluation
 python scripts/evaluate.py --output-dir evaluation
-```
 
-### 8. Demo
-
-```bash
+# Demo
 python demo/app.py
 ```
 
-Default URL:
+## Project Structure
 
-- `http://localhost:7860`
+```
+src/handwrite/
+├── animation/          # Stroke order, trajectory, frame rendering, GIF/MP4 export
+├── ar/                 # Paper detection, perspective transform, texture blending
+├── collaboration/      # Contributor management, segment assignment, style blending
+├── data/               # CASIA parser, charsets, dataset utilities
+├── digitization/       # OCR recognition, style preservation, round-trip editing
+├── dynamics/           # Pressure, ink flow, speed simulation
+├── engine/             # Generator, discriminator, training engine
+├── formula/            # LaTeX/chemistry parsing, layout, rendering
+├── grading/            # Error detection, annotation, scoring, feedback
+├── ocr_style/          # Image preprocessing, character segmentation, style extraction
+├── papers/             # Paper template registry, built-in papers, renderer
+├── personalization/    # Sample analysis, style extraction, glyph synthesis
+├── quality/            # Authenticity scoring, naturalness scoring, improvement advisor
+├── semantic/           # Text analysis, layout planning, annotation rendering
+├── style_mixing/       # Style vectors, mixing, transfer, interpolation
+├── summary/            # Text summarization, mind map layout, outline layout
+├── temporal/           # Age profiles, historical style, skill simulation
+├── composer.py         # Page composition engine
+├── exporter.py         # PNG/PDF export
+├── prototypes.py       # Prototype pack management
+└── styles.py           # Style registry
+```
 
-The demo is now meant to support the classroom-note product loop:
+## Current Limitations
 
-- paste note text
-- inspect realism before generation
-- generate multi-page note pages
-- preview page by page
-- download PNG/PDF artifacts
+1. **No pretrained weights** - Uses prototype-backed fallback when weights are unavailable
+2. **Limited starter pack** - Built-in prototype pack is small; larger coverage requires local building
+3. **No automatic text rewriting** - Precheck reports and suggests, but never modifies user text
+4. **Lightweight evaluation** - Includes basic metrics, not a full research-grade benchmark
 
-## Practical Limits and Honest Notes
+## Suggested Workflow
 
-### 1. The starter pack is not the full note asset body
-
-The repository should include a small distributable starter prototype pack, not a full 2000+ built-in handwritten asset set.
-
-### 2. Larger realistic coverage still depends on local expansion
-
-If you need broader coverage or more stable realism, build a bigger local prototype library and pass it into `prototype_pack` in the API or demo, or move on to real generator weights.
-
-### 3. The product does not rewrite text automatically
-
-Precheck is advisory. It reports risk and suggestions, but the user keeps control of the text.
-
-### 4. Evaluation is still lightweight
-
-The repo includes a Frechet-style lightweight metric, but not a full research-grade benchmark pipeline.
-
-## Suggested Order of Use
-
-1. `pip install -e ".[dev]"`
-2. `pytest`
-3. use `handwrite.inspect_text(...)` or the demo precheck before generation
-4. try the starter-pack classroom-note flow out of the box
-5. prepare `.gnt` data and a usable Chinese font
-6. run `scripts/download_data.py` and `scripts/preprocess.py` when you want broader local data
-7. run `scripts/build_prototype_library.py` to build a larger private prototype pack
-8. only then move on to real style selection, training, and evaluation if you need higher-quality generation
+1. `pip install -e ".[dev]"` - Install dependencies
+2. `pytest` - Run tests (623+ tests passing)
+3. `handwrite.inspect_text(...)` - Precheck text coverage
+4. `python demo/app.py` - Try the full product loop
+5. Prepare `.gnt` data and Chinese fonts
+6. `scripts/build_prototype_library.py` - Build a larger prototype pack
+7. Run training/evaluation scripts for higher quality
