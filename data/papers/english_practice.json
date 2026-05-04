@@ -1,0 +1,9 @@
+{
+  "name": "英语练习纸",
+  "description": "English practice paper with four-line three-grid layout for handwriting",
+  "size": [2480, 3508],
+  "regions": [
+    {"type": "text", "x": 1000, "y": 120, "text": "English Practice", "size": 70, "color": 160},
+    {"type": "four_line_group", "y_start": 350, "y_end": 3300, "group_height": 200, "color": 200, "width": 1, "x1": 200, "x2": 2280, "dash_middle": true, "dash_color": 220}
+  ]
+}

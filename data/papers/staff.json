@@ -1,0 +1,9 @@
+{
+  "name": "五线谱",
+  "description": "Music staff paper for notation",
+  "size": [2480, 3508],
+  "regions": [
+    {"type": "staff_group", "y_start": 400, "staff_count": 8, "line_spacing": 24, "staff_gap": 260, "color": 180, "width": 1, "x1": 200, "x2": 2280},
+    {"type": "text", "x": 1000, "y": 120, "text": "五线谱", "size": 70, "color": 160}
+  ]
+}

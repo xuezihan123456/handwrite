@@ -12,6 +12,7 @@ dependencies = [
     "opencv-python>=4.8",
     "gradio>=4.0",
     "tqdm>=4.65",
+    "pytesseract>=0.3.10",
 ]
 
 [project.optional-dependencies]

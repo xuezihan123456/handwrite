@@ -3,6 +3,8 @@
 from pathlib import Path
 from typing import Iterable, List, Union
 
+import cv2
+import numpy as np
 from PIL import Image
 
 
@@ -95,3 +97,87 @@ def export_pages_png(
         written_paths.append(export_png(page, output_path, dpi=dpi))
 
     return written_paths
+
+
+def export_animation(
+    frames: Iterable[Image.Image],
+    output_path: PathLike,
+    format: str = "gif",
+    fps: int = 30,
+    loop: int = 0,
+) -> Path:
+    """Export animation frames as GIF or MP4.
+
+    Args:
+        frames: Iterable of animation frame images.
+        output_path: Destination file path.
+        format: Output format, either 'gif' or 'mp4'.
+        fps: Frames per second.
+        loop: Number of loops for GIF (0 = infinite).
+
+    Returns:
+        Path to the written file.
+    """
+    frame_list = list(frames)
+    if not frame_list:
+        raise ValueError("frames must contain at least one frame")
+
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    normalized_format = format.lower()
+    if normalized_format == "gif":
+        return _export_animation_gif(frame_list, path, fps, loop)
+    if normalized_format == "mp4":
+        return _export_animation_mp4(frame_list, path, fps)
+
+    raise ValueError("format must be 'gif' or 'mp4'")
+
+
+def _export_animation_gif(
+    frames: List[Image.Image],
+    path: Path,
+    fps: int,
+    loop: int,
+) -> Path:
+    """Save animation frames as an animated GIF using Pillow."""
+    duration_ms = max(1, int(1000 / fps))
+
+    # Convert frames to palette mode for GIF compatibility
+    gif_frames = []
+    for frame in frames:
+        rgb = _prepare_pdf_page(frame) if frame.mode != "RGB" else frame
+        gif_frames.append(rgb.convert("P", palette=Image.Palette.ADAPTIVE))
+
+    gif_frames[0].save(
+        path,
+        save_all=True,
+        append_images=gif_frames[1:],
+        duration=duration_ms,
+        loop=loop,
+    )
+    return path
+
+
+def _export_animation_mp4(
+    frames: List[Image.Image],
+    path: Path,
+    fps: int,
+) -> Path:
+    """Save animation frames as an MP4 video using OpenCV."""
+    if not frames:
+        raise ValueError("frames must contain at least one frame")
+
+    width, height = frames[0].size
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(str(path), fourcc, float(fps), (width, height), True)
+
+    try:
+        for frame in frames:
+            rgb = _prepare_pdf_page(frame) if frame.mode != "RGB" else frame
+            bgr = cv2.cvtColor(np.array(rgb), cv2.COLOR_RGB2BGR)
+            writer.write(bgr)
+    finally:
+        writer.release()
+
+    return path

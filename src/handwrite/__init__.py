@@ -5,6 +5,9 @@ from pathlib import Path
 from PIL import Image
 
 from . import exporter as _exporter
+from handwrite.animation import export_animation as _export_animation
+from handwrite.animation import generate_char_animation as _generate_char_animation
+from handwrite.animation import generate_text_animation as _generate_text_animation
 from handwrite.composer import (
     CURSIVE_LAYOUT,
     GRID_PAPER,
@@ -171,6 +174,194 @@ def export(page: Image.Image, output_path, format: str = "png", **kwargs):
     if normalized_format == "pdf":
         return _exporter.export_pdf(page, output_path, **kwargs)
     raise ValueError("format must be 'png' or 'pdf'")
+
+
+def animate_char(
+    char: str,
+    style: str = _DEFAULT_STYLE,
+    fps: int = 30,
+    duration: float = 1.0,
+    char_size: int = 256,
+    prototype_pack: str | Path | None = None,
+) -> list[Image.Image]:
+    """Generate a handwriting animation for a single character.
+
+    Returns a list of frames showing the character being written stroke by stroke.
+    """
+    return _generate_char_animation(
+        char,
+        style=style,
+        fps=fps,
+        duration=duration,
+        char_size=char_size,
+        prototype_pack=prototype_pack,
+    )
+
+
+def animate_text(
+    text: str,
+    style: str = _DEFAULT_STYLE,
+    fps: int = 30,
+    char_duration: float = 1.0,
+    char_size: int = 256,
+    chars_per_line: int = 8,
+    prototype_pack: str | Path | None = None,
+) -> list[Image.Image]:
+    """Generate a handwriting animation for a text string.
+
+    Returns a list of frames showing the text being written character by character.
+    """
+    return _generate_text_animation(
+        text,
+        style=style,
+        fps=fps,
+        char_duration=char_duration,
+        char_size=char_size,
+        chars_per_line=chars_per_line,
+        prototype_pack=prototype_pack,
+    )
+
+
+def export_animation(
+    frames: list[Image.Image],
+    output_path,
+    format: str = "gif",
+    fps: int = 30,
+    **kwargs,
+):
+    """Export animation frames as GIF or MP4."""
+    return _export_animation(frames, output_path, format=format, fps=fps, **kwargs)
+
+
+def digitize(
+    image,
+    *,
+    backend: str = "tesseract",
+    languages: tuple[str, ...] = ("chi_sim", "eng"),
+    confidence_threshold: float = 0.0,
+    save_glyphs_to: str | Path | None = None,
+    pack_name: str = "extracted_style",
+) -> dict[str, object]:
+    """Digitize a handwritten scan into editable text.
+
+    Args:
+        image: Path to the scanned image, PIL Image, or numpy array.
+        backend: OCR backend ("tesseract" or "easyocr").
+        languages: OCR language codes.
+        confidence_threshold: Minimum confidence (0-100) to include a character.
+        save_glyphs_to: If set, save extracted character glyphs as a prototype pack.
+        pack_name: Name for the saved prototype pack.
+
+    Returns:
+        Dictionary with recognized text, per-character confidence, and metadata.
+    """
+    from handwrite.digitization.handwriting_recognizer import (
+        HandwritingRecognizer,
+        OCRBackend,
+        OCRConfig,
+    )
+    from handwrite.digitization.style_preserver import StylePreserver
+
+    config = OCRConfig(
+        backend=OCRBackend(backend),
+        languages=languages,
+        confidence_threshold=confidence_threshold,
+    )
+    recognizer = HandwritingRecognizer(config)
+    result = recognizer.recognize(image)
+
+    output: dict[str, object] = {
+        "text": result.text,
+        "lines": list(result.lines),
+        "average_confidence": result.average_confidence,
+        "processing_time_ms": result.processing_time_ms,
+        "total_characters": len(result.characters),
+        "characters": [
+            {
+                "char": c.char,
+                "confidence": round(c.confidence, 2),
+                "bbox": list(c.bbox),
+                "line_index": c.line_index,
+            }
+            for c in result.characters
+        ],
+    }
+
+    if save_glyphs_to is not None:
+        preserver = StylePreserver()
+        glyphs = preserver.extract_deduplicated_glyphs(
+            preserver._load_image(image), result
+        )
+        if glyphs:
+            pack_path = preserver.save_as_prototype_pack(glyphs, save_glyphs_to, pack_name)
+            output["prototype_pack_path"] = str(pack_path)
+            output["glyph_count"] = len(glyphs)
+
+    return output
+
+
+def round_trip(
+    image,
+    *,
+    output_dir: str | Path | None = None,
+    pack_name: str = "extracted_style",
+    style: str = _DEFAULT_STYLE,
+    paper: str = WHITE_PAPER,
+    layout: str = NATURAL_LAYOUT,
+    font_size: int = 80,
+    corrections: dict[int, str] | None = None,
+    backend: str = "tesseract",
+) -> dict[str, object]:
+    """Execute the full round-trip pipeline: scan -> recognize -> edit -> regenerate.
+
+    Args:
+        image: Path to the scanned image, PIL Image, or numpy array.
+        output_dir: Directory to save extracted prototype pack and results.
+        pack_name: Name for the extracted prototype pack.
+        style: Handwriting style for regeneration.
+        paper: Paper type for regeneration.
+        layout: Layout style for regeneration.
+        font_size: Font size for regeneration.
+        corrections: Optional corrections mapping (char_index -> new_char).
+        backend: OCR backend to use.
+
+    Returns:
+        Dictionary with recognized text, extracted glyphs, and regenerated image path.
+    """
+    from handwrite.digitization.handwriting_recognizer import OCRBackend, OCRConfig
+    from handwrite.digitization.round_trip_engine import RoundTripEngine
+
+    config = OCRConfig(backend=OCRBackend(backend))
+    engine = RoundTripEngine(ocr_config=config)
+
+    result = engine.round_trip(
+        image=image,
+        output_dir=output_dir,
+        pack_name=pack_name,
+        style=style,
+        paper=paper,
+        layout=layout,
+        font_size=font_size,
+        corrections=corrections,
+        save_pack=output_dir is not None,
+    )
+
+    output: dict[str, object] = {
+        "text": result.document.text,
+        "lines": result.document.lines,
+        "glyph_count": len(result.extracted_glyphs),
+        "average_confidence": result.recognition.average_confidence,
+    }
+
+    if result.prototype_pack_path:
+        output["prototype_pack_path"] = str(result.prototype_pack_path)
+
+    if result.regenerated_image and output_dir:
+        regen_path = Path(output_dir) / "regenerated.png"
+        result.regenerated_image.save(str(regen_path))
+        output["regenerated_image_path"] = str(regen_path)
+
+    return output
 
 
 def _normalize_inspection_report(

@@ -13,6 +13,8 @@ from handwrite.exporter import export_pages_pdf, export_pages_png
 
 PathLike = Union[str, Path]
 _PAPER_CHOICES = ["白纸", "横线纸", "方格纸", "米字格"]
+_PAPER_DISPLAY = ["📄 白纸", "📝 横线纸", "🔲 方格纸", "⊞ 米字格"]
+_PAPER_DISPLAY_TO_API = dict(zip(_PAPER_DISPLAY, _PAPER_CHOICES))
 _LAYOUT_CHOICES = ["工整", "自然", "潦草"]
 _NOTE_PRESETS = {
     "牛顿定律复习": (
@@ -103,6 +105,44 @@ def _optional_prototype_kwargs(prototype_pack: Optional[PathLike] = None) -> dic
     if not normalized:
         return {}
     return {"prototype_pack": normalized}
+
+
+def _format_precheck_for_user(report: dict[str, object] | None) -> str:
+    """把技术性预检字典转为中文用户友好提示。"""
+    try:
+        if not isinstance(report, dict):
+            return "ℹ️ 预检完成，可以开始生成"
+        unique_characters = report.get("unique_characters") or []
+        total_unique = len(unique_characters) if isinstance(unique_characters, list) else 0
+        prototype_covered = report.get("prototype_covered_characters") or []
+        model_supported = report.get("model_supported_characters") or []
+        high_realism = (
+            len(prototype_covered) if isinstance(prototype_covered, list) else 0
+        ) + (
+            len(model_supported) if isinstance(model_supported, list) else 0
+        )
+        if total_unique == 0:
+            return "ℹ️ 预检完成，可以开始生成"
+        coverage_pct = round(high_realism / total_unique * 100)
+        if coverage_pct >= 80:
+            return f"✅ 手写覆盖率 {coverage_pct}%，生成效果自然流畅"
+        if coverage_pct >= 40:
+            return f"⚠️ 手写覆盖率 {coverage_pct}%，部分字符使用标准字体替代"
+        return f"ℹ️ 当前主要使用标准字体模式（覆盖率 {coverage_pct}%）"
+    except Exception:
+        return "ℹ️ 预检完成，可以开始生成"
+
+
+def _friendly_error(e: Exception) -> str:
+    """把技术性异常转为用户友好中文提示。"""
+    msg = str(e).lower()
+    if "prototype_pack" in msg or "manifest" in msg:
+        return "原型库路径无效，请检查路径是否正确"
+    if "too long" in msg or "capacity" in msg:
+        return "文字太长，请减少文字数量后重试"
+    if "too small" in msg:
+        return "图片尺寸太小"
+    return f"生成遇到问题，请重试（{type(e).__name__}）"
 
 
 def _generation_status_from_report(report: dict[str, object] | None) -> str:
@@ -224,10 +264,11 @@ def inspect_demo_text(
             f"- 自定义原型字库不可用: `{error}`\n"
             "- 请确认你填的是 prototype pack 目录或 manifest.json 路径。"
         )
+    user_summary = _format_precheck_for_user(report)
     report_markdown = report.get("report_markdown")
     if isinstance(report_markdown, str) and report_markdown.strip():
-        return report_markdown
-    return "## 课堂笔记预检\n- 当前没有可展示的预检结果。"
+        return f"{user_summary}\n\n{report_markdown}"
+    return f"{user_summary}\n\n## 课堂笔记预检\n- 当前没有可展示的预检结果。"
 
 
 def _generate_demo_document_bundle(
@@ -316,7 +357,7 @@ def generate_demo_document_session(
             prototype_pack=prototype_pack,
             output_dir=output_dir,
         )
-    except (FileNotFoundError, OSError) as error:
+    except Exception as error:
         return (
             None,
             None,
@@ -325,7 +366,7 @@ def generate_demo_document_session(
             None,
             _page_status_text(0, 0),
             _slider_update(minimum=1, maximum=1, value=1, visible=False),
-            f"⚠️ 自定义原型字库不可用：{error}",
+            f"⚠️ {_friendly_error(error)}",
         )
     if not session or not session.get("pages"):
         return (
@@ -483,7 +524,7 @@ def build_demo():
                 prototype_pack_input = gr.Textbox(
                     label="Local Prototype Pack (optional)",
                     lines=1,
-                    placeholder="Path to a local prototype pack directory or manifest.json",
+                    placeholder="留空使用内置包 | 扩充包示例：data/prototypes/font_note",
                 )
                 inspect_button = gr.Button(
                     value="Inspect Note Realism",
@@ -565,6 +606,44 @@ def build_demo():
             fn=change_preview_page,
             inputs=[preview_page_input, preview_state],
             outputs=[preview_output, page_status_output],
+        )
+
+        gr.Examples(
+            examples=[
+                [
+                    "语文课笔记：\n今天学了《岳阳楼记》，重点句式：先天下之忧而忧，后天下之乐而乐。\n课后要求背诵全文，注意断句和情感变化。",
+                    "行书流畅",
+                    "横线纸",
+                    "自然",
+                    80,
+                    "data/prototypes/font_note",
+                ],
+                [
+                    "数学笔记：\n二次函数 y = ax² + bx + c\n顶点坐标：(-b/2a, (4ac-b²)/4a)\n判别式 Δ = b²-4ac，Δ>0两个实根，Δ=0两相等实根，Δ<0无实根。",
+                    "工整楷书",
+                    "方格纸",
+                    "工整",
+                    72,
+                    "data/prototypes/font_note",
+                ],
+                [
+                    "English Notes:\nGrammar focus: The Present Perfect Tense.\nForm: have/has + past participle.\nUsage: actions that happened at an unspecified time before now.\nExample: I have visited Beijing twice.",
+                    "工整楷书",
+                    "白纸",
+                    "工整",
+                    68,
+                    "data/prototypes/font_note",
+                ],
+            ],
+            inputs=[
+                text_input,
+                style_input,
+                paper_input,
+                layout_input,
+                font_size_input,
+                prototype_pack_input,
+            ],
+            label="内置示例（点击填入）",
         )
 
     return demo

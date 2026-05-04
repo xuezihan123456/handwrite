@@ -1,0 +1,21 @@
+{
+  "name": "思维导图",
+  "description": "Mind map paper with central node and radiating branches",
+  "size": [2480, 3508],
+  "regions": [
+    {"type": "ellipse", "cx": 1240, "cy": 1754, "rx": 260, "ry": 120, "color": 200, "width": 2},
+    {"type": "line", "x1": 1500, "y1": 1754, "x2": 2100, "y2": 1100, "color": 210, "width": 1},
+    {"type": "line", "x1": 1500, "y1": 1754, "x2": 2100, "y2": 1754, "color": 210, "width": 1},
+    {"type": "line", "x1": 1500, "y1": 1754, "x2": 2100, "y2": 2400, "color": 210, "width": 1},
+    {"type": "line", "x1": 980, "y1": 1754, "x2": 380, "y2": 1100, "color": 210, "width": 1},
+    {"type": "line", "x1": 980, "y1": 1754, "x2": 380, "y2": 1754, "color": 210, "width": 1},
+    {"type": "line", "x1": 980, "y1": 1754, "x2": 380, "y2": 2400, "color": 210, "width": 1},
+    {"type": "ellipse", "cx": 2100, "cy": 1100, "rx": 180, "ry": 70, "color": 220, "width": 1},
+    {"type": "ellipse", "cx": 2100, "cy": 1754, "rx": 180, "ry": 70, "color": 220, "width": 1},
+    {"type": "ellipse", "cx": 2100, "cy": 2400, "rx": 180, "ry": 70, "color": 220, "width": 1},
+    {"type": "ellipse", "cx": 380, "cy": 1100, "rx": 180, "ry": 70, "color": 220, "width": 1},
+    {"type": "ellipse", "cx": 380, "cy": 1754, "rx": 180, "ry": 70, "color": 220, "width": 1},
+    {"type": "ellipse", "cx": 380, "cy": 2400, "rx": 180, "ry": 70, "color": 220, "width": 1},
+    {"type": "text", "x": 1100, "y": 1720, "text": "中心主题", "size": 55, "color": 120}
+  ]
+}

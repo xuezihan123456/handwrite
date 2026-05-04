@@ -1,0 +1,14 @@
+{
+  "name": "康奈尔笔记",
+  "description": "Cornell note-taking system with cue, note, and summary regions",
+  "size": [2480, 3508],
+  "regions": [
+    {"type": "line", "x1": 700, "y1": 0, "x2": 700, "y2": 3508, "color": 200, "width": 2},
+    {"type": "line", "x1": 0, "y1": 780, "x2": 2480, "y2": 780, "color": 200, "width": 2},
+    {"type": "line", "x1": 0, "y1": 2800, "x2": 2480, "y2": 2800, "color": 200, "width": 2},
+    {"type": "text", "x": 200, "y": 300, "text": "线索栏", "size": 60, "color": 160},
+    {"type": "text", "x": 1200, "y": 300, "text": "笔记栏", "size": 60, "color": 160},
+    {"type": "text", "x": 900, "y": 2900, "text": "总结栏", "size": 60, "color": 160},
+    {"type": "hline_group", "y_start": 900, "y_end": 2750, "spacing": 100, "color": 230, "width": 1, "x1": 720, "x2": 2460}
+  ]
+}
