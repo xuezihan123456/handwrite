@@ -791,3 +791,64 @@ def _trim_trailing_spaces(line: list[str]) -> None:
 
 def _lines_to_text(lines: list[str]) -> str:
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# 10 new innovation modules (Phase 2)
+# ---------------------------------------------------------------------------
+# Eager re-exports for the most-used surface; heavier classes remain
+# accessible via their sub-module (e.g. `from handwrite.diffusion import UNet`).
+
+from handwrite.photo_style import (  # noqa: E402
+    PhotoStylePipeline,
+    photo_to_style,
+    assess_photo_quality,
+    PhotoQualityReport,
+)
+from handwrite.live_note import (  # noqa: E402
+    LiveNoteEngine,
+    NoteAnimationConfig,
+    live_note_video,
+)
+from handwrite.diffusion import (  # noqa: E402
+    DiffusionEngine,
+    NoiseScheduler,
+)
+from handwrite.nl_style import (  # noqa: E402
+    NaturalLanguageStyler,
+    parse_description,
+)
+from handwrite.error_notebook import (  # noqa: E402
+    ErrorEntry,
+    ErrorNotebookBuilder,
+    build_error_notebook,
+    diff_answers,
+)
+from handwrite.timeline import (  # noqa: E402
+    TimelineModel,
+    fit_timeline,
+    generate_at_age,
+)
+from handwrite.watermark import (  # noqa: E402
+    embed_watermark,
+    extract_watermark,
+)
+from handwrite.geometry_sheet import (  # noqa: E402
+    GeometrySheetBuilder,
+    Problem,
+    build_exam_sheet,
+)
+from handwrite.pen_3d import (  # noqa: E402
+    Pen3DSimulator,
+    PenSample3D,
+    PenStroke3D,
+    replay_to_image,
+    export_will_json,
+    import_will_json,
+)
+
+# `handwrite.service` is lazy-loaded because FastAPI is an optional dep.
+def _service_create_app(**kwargs):
+    """Return a FastAPI app for the HandWrite service (None if FastAPI missing)."""
+    from handwrite.service import create_app as _ca
+    return _ca(**kwargs)
