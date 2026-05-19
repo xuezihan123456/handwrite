@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  handwrite-service:
+    build:
+      context: ../../..
+      dockerfile: src/handwrite/service/Dockerfile
+    image: handwrite-service:0.1.0
+    container_name: handwrite-service
+    ports:
+      - "8000:8000"
+    environment:
+      HANDWRITE_SERVICE_HOST: "0.0.0.0"
+      HANDWRITE_SERVICE_PORT: "8000"
+      HANDWRITE_MAX_CHARS_PER_DAY: "50000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
